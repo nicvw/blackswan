@@ -5,7 +5,9 @@ provider "aws" {
 
 # Create a vpc with a cidr 10.0.0.0/16
 resource "aws_vpc" "nicvw" {
-  cidr_block = "10.0.0.0/16"
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 }
 
 resource "aws_internet_gateway" "gw" {
@@ -49,7 +51,7 @@ resource "aws_lb_listener" "frontend_https" {
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS-1-2-2017-01"
-  certificate_arn   = "${aws_acm_certificate_validation.cert.certificate_arn}"
+  certificate_arn   = "${aws_acm_certificate_validation.default.certificate_arn}"
 
   default_action {
     type             = "forward"
@@ -70,12 +72,12 @@ resource "aws_lb_listener" "frontend_http" {
 
 # create a domain in route 53 (any will do, private won't need registration) and get a cert for the domain to apply to the ELB
 resource "aws_route53_zone" "zone" {
-  name   = "nicvw.com"
-  vpc_id = "${aws_vpc.nicvw.id}"
+  name   = "aws.sigterm.co.za"
+  # vpc_id = "${aws_vpc.nicvw.id}"
 }
 
-resource "aws_acm_certificate" "cert" {
-  domain_name       = "nicvw.com"
+resource "aws_acm_certificate" "default" {
+  domain_name       = "aws.sigterm.co.za"
   validation_method = "DNS"
 
   lifecycle {
@@ -85,7 +87,7 @@ resource "aws_acm_certificate" "cert" {
 
 resource "aws_route53_record" "www" {
   zone_id = "${aws_route53_zone.zone.zone_id}"
-  name    = "nicvw.com"
+  name    = "aws.sigterm.co.za"
   type    = "A"
 
   alias {
@@ -95,17 +97,17 @@ resource "aws_route53_record" "www" {
   }
 }
 
-resource "aws_route53_record" "cert_validation" {
-  name    = "${aws_acm_certificate.cert.domain_validation_options.0.resource_record_name}"
-  type    = "${aws_acm_certificate.cert.domain_validation_options.0.resource_record_type}"
+resource "aws_route53_record" "validation" {
+  name    = "${aws_acm_certificate.default.domain_validation_options.0.resource_record_name}"
+  type    = "${aws_acm_certificate.default.domain_validation_options.0.resource_record_type}"
   zone_id = "${aws_route53_zone.zone.id}"
-  records = ["${aws_acm_certificate.cert.domain_validation_options.0.resource_record_value}"]
+  records = ["${aws_acm_certificate.default.domain_validation_options.0.resource_record_value}"]
   ttl     = 60
 }
 
-resource "aws_acm_certificate_validation" "cert" {
-  certificate_arn = "${aws_acm_certificate.cert.arn}"
-  validation_record_fqdns = ["${aws_route53_record.cert_validation.fqdn}"]
+resource "aws_acm_certificate_validation" "default" {
+  certificate_arn         = "${aws_acm_certificate.default.arn}"
+  validation_record_fqdns = ["${aws_route53_record.validation.fqdn}"]
 }
 
 # an EC2 instance with nginx installed , using amazon linux (automatically)
@@ -113,3 +115,4 @@ resource "aws_acm_certificate_validation" "cert" {
 # output the ELB IP , mysql url, username and password at end of run
 # ec2 instance size and root block size aswell as mysql dbname , username,password , instance size and space configurable with a TF vars file .
 # terraform state file to be saved in a s3 bucket
+
