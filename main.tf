@@ -31,6 +31,37 @@ resource "aws_subnet" "public-1b" {
   availability_zone = "us-east-1b"
 }
 
+# Public DNS resolution
+resource "aws_vpc_dhcp_options" "dns_resolver" {
+  domain_name_servers = ["8.8.8.8", "8.8.4.4"]
+}
+
+resource "aws_vpc_dhcp_options_association" "dns_resolver" {
+  vpc_id          = "${aws_vpc.nicvw.id}"
+  dhcp_options_id = "${aws_vpc_dhcp_options.dns_resolver.id}"
+}
+
+# Public routing
+resource "aws_route_table" "public" {
+  vpc_id = "${aws_vpc.nicvw.id}"
+}
+
+resource "aws_route" "public_default" {
+  route_table_id         = "${aws_route_table.public.id}"
+  gateway_id             = "${aws_internet_gateway.gw.id}"
+  destination_cidr_block = "0.0.0.0/0"
+}
+
+resource "aws_route_table_association" "public-1a" {
+  subnet_id      = "${aws_subnet.public-1a.id}"
+  route_table_id = "${aws_route_table.public.id}"
+}
+
+resource "aws_route_table_association" "public-1b" {
+  subnet_id      = "${aws_subnet.public-1b.id}"
+  route_table_id = "${aws_route_table.public.id}"
+}
+
 resource "aws_key_pair" "deployer" {
   key_name   = "installer-key"
   public_key = "${var.ssh_public_key}"
@@ -83,10 +114,10 @@ resource "aws_security_group" "web-servers" {
 }
 
 resource "aws_alb_target_group" "frontend_web" {
-  name = "lb-tg-frontend"
-  port        = 80
-  protocol    = "HTTP"
-  vpc_id      = "${aws_vpc.nicvw.id}"
+  name     = "lb-tg-frontend"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = "${aws_vpc.nicvw.id}"
 
   health_check {
   }
@@ -157,7 +188,7 @@ resource "aws_acm_certificate_validation" "default" {
 
 # an EC2 instance with nginx installed , using amazon linux (automatically)
 data "aws_ami" "amazon_linux" {
-  most_recent      = true
+  most_recent = true
 
   filter {
     name = "name"
@@ -180,6 +211,7 @@ resource "aws_instance" "nginx" {
   security_groups = ["${aws_security_group.inbound.id}"]
   depends_on      = ["aws_key_pair.deployer"]
   key_name        = "installer-key"
+
 }
 
 resource "null_resource" "nginx" {
@@ -201,19 +233,19 @@ resource "null_resource" "nginx" {
       host        = "${aws_eip.nginx-bootstrap-ip.public_ip}"
       type        = "ssh"
       agent       = false
-      # host        = "${aws_instance.nginx.public_ip}"
+      user        = "ec2-user"
       private_key = "${var.ssh_private_key}"
     }
   }
 }
 
 resource "aws_eip" "nginx-bootstrap-ip" {
-  vpc	     = true
+  vpc = true
 }
 
 resource "aws_eip_association" "nginx-bootstrap-ip" {
   allocation_id = "${aws_eip.nginx-bootstrap-ip.id}"
-  instance_id = "${aws_instance.nginx.id}"
+  instance_id   = "${aws_instance.nginx.id}"
 
 }
 
