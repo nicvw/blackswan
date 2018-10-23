@@ -31,35 +31,49 @@ resource "aws_subnet" "public-1b" {
   availability_zone = "us-east-1b"
 }
 
+resource "aws_key_pair" "deployer" {
+  key_name   = "installer-key"
+  public_key = "${var.ssh_public_key}"
+}
+
 # Elastic load balancer with port 80 and 443 exposed and a public ip address
 resource "aws_alb" "frontend" {
-  name        = "frontend-alb-www",
-  internal           = false
-  subnets	           = ["${aws_subnet.public-1a.id}", "${aws_subnet.public-1b.id}"]
-  depends_on         = ["aws_internet_gateway.gw"]
+  name       = "frontend-alb-www",
+  internal   = false
+  subnets    = ["${aws_subnet.public-1a.id}", "${aws_subnet.public-1b.id}"]
+  depends_on = ["aws_internet_gateway.gw"]
 }
 
 resource "aws_security_group" "inbound" {
-  name = "sec_group_inbound"
+  name        = "sec_group_inbound"
   description = "Inbound Internet traffic"
-  vpc_id = "${aws_vpc.nicvw.id}"
+  vpc_id      = "${aws_vpc.nicvw.id}"
 
   ingress {
-    from_port = 0
-    to_port = 443
-    protocol = "tcp"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
-    from_port = 0
-    to_port = 80
-    protocol = "tcp"
+    from_port	  = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
     from_port = 0
-    to_port = 22
-    protocol = "tcp"
+    to_port = 0
+    protocol = "-1"
   }
 }
 
@@ -160,10 +174,21 @@ output "LB IP" {
 }
 
 resource "aws_instance" "nginx" {
-  ami           = "${data.aws_ami.amazon_linux.image_id}"
-  instance_type = "t2.micro"
-  subnet_id     = "${aws_subnet.public-1a.id}"
+  ami             = "${data.aws_ami.amazon_linux.image_id}"
+  instance_type   = "t2.micro"
+  subnet_id       = "${aws_subnet.public-1a.id}"
+  security_groups = ["${aws_security_group.inbound.id}"]
+  depends_on      = ["aws_key_pair.deployer"]
+  key_name        = "installer-key"
+}
 
+resource "null_resource" "nginx" {
+
+  depends_on = ["aws_eip_association.nginx-bootstrap-ip"]
+
+  triggers = {
+    instance_id = "${aws_instance.nginx.id}"
+  }
 
   provisioner "remote-exec" {
 
@@ -173,7 +198,11 @@ resource "aws_instance" "nginx" {
     ]
 
     connection {
-      host = "${aws_eip.nginx-bootstrap-ip.public_ip}"
+      host        = "${aws_eip.nginx-bootstrap-ip.public_ip}"
+      type        = "ssh"
+      agent       = false
+      # host        = "${aws_instance.nginx.public_ip}"
+      private_key = "${var.ssh_private_key}"
     }
   }
 }
@@ -187,7 +216,6 @@ resource "aws_eip_association" "nginx-bootstrap-ip" {
   instance_id = "${aws_instance.nginx.id}"
 
 }
-
 
 resource "aws_lb_target_group_attachment" "frontend_www" {
   target_group_arn = "${aws_alb_target_group.frontend_web.arn}"
