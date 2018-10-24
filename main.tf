@@ -23,23 +23,37 @@ resource "aws_subnet" "public-1a" {
   vpc_id            = "${aws_vpc.nicvw.id}"
   cidr_block        = "10.0.0.0/24"
   availability_zone = "us-east-1a"
+  map_public_ip_on_launch = true
 }
 
 resource "aws_subnet" "public-1b" {
   vpc_id            = "${aws_vpc.nicvw.id}"
   cidr_block        = "10.0.1.0/24"
   availability_zone = "us-east-1b"
+  map_public_ip_on_launch = true
 }
 
-# Public DNS resolution
-resource "aws_vpc_dhcp_options" "dns_resolver" {
-  domain_name_servers = ["8.8.8.8", "8.8.4.4"]
-}
+# NAT gateway
+# resource "aws_eip" "nat-1a" {
+#   vpc = true
+# }
 
-resource "aws_vpc_dhcp_options_association" "dns_resolver" {
-  vpc_id          = "${aws_vpc.nicvw.id}"
-  dhcp_options_id = "${aws_vpc_dhcp_options.dns_resolver.id}"
-}
+# resource "aws_nat_gateway" "gw-1a" {
+#   allocation_id = "${aws_eip.nat-1a.id}"
+#   subnet_id     = "${aws_subnet.public-1a.id}"
+#   depends_on    = ["aws_internet_gateway.gw"]
+# }
+
+# resource "aws_eip" "nat-1b" {
+#   vpc = true
+# }
+
+# resource "aws_nat_gateway" "gw-1b" {
+#   allocation_id = "${aws_eip.nat-1b.id}"
+#   subnet_id     = "${aws_subnet.public-1b.id}"
+#   depends_on    = ["aws_internet_gateway.gw"]
+# }
+
 
 # Public routing
 resource "aws_route_table" "public" {
@@ -105,13 +119,14 @@ resource "aws_security_group" "inbound" {
     from_port = 0
     to_port = 0
     protocol = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 }
 
-resource "aws_security_group" "web-servers" {
-  name   = "sec_group-www"
-  vpc_id = "${aws_vpc.nicvw.id}"
-}
+# resource "aws_security_group" "web-servers" {
+#   name   = "sec_group-www"
+#   vpc_id = "${aws_vpc.nicvw.id}"
+# }
 
 resource "aws_alb_target_group" "frontend_web" {
   name     = "lb-tg-frontend"
@@ -209,8 +224,9 @@ resource "aws_instance" "nginx" {
   instance_type   = "t2.micro"
   subnet_id       = "${aws_subnet.public-1a.id}"
   security_groups = ["${aws_security_group.inbound.id}"]
-  depends_on      = ["aws_key_pair.deployer"]
+  # depends_on      = ["aws_key_pair.deployer"]
   key_name        = "installer-key"
+  # associate_public_ip_address = true
 
 }
 
